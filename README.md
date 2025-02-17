@@ -13,6 +13,11 @@ With `-t <tickrate>` you can specify your own tickrate. The default is 500.
 
 ## Steering
 
-You can pause or resume emulation by pressing Space.
-While the emulation is paused you can take steps with s.
-And if you press e, the emulation will stop.
+- `SPACE` is for pause and play.
+- If it is paused you can do Steps with `s`.
+- With `TAB` you can restart the script.
+- With `e` you can quit.
+
+## Movement
+
+This are the keys to move and interact with programms: `1, 2, 3, 4, q, w, e, r, a, s, d, f, z, x, c, v`.
