@@ -1,5 +1,6 @@
 import sys
 import time
+import os
 import random
 import argparse
 import pygame
@@ -63,7 +64,7 @@ class Chip8:
         try:
             with open(rom_path, "rb") as f:
                 rom = f.read()
-            print(f"Geladene ROM-Größe: {len(rom)} Bytes")
+            console.print(f"Geladene ROM-Größe: {len(rom)} Bytes", style="yellow")
             for i in range(len(rom)):
                 self.memory[0x200 + i] = rom[i]
         except FileNotFoundError:
@@ -83,15 +84,21 @@ class Chip8:
         nnn = opcode & 0x0FFF
 
         self.opcode_name = ""
+        self.handle_d_opcode(opcode)
+        
+         # Wenn der Opcode bereits verarbeitet wurde (handle_d_opcode)
+        if self.opcode_name != "":
+            return
 
         # Mapping von Opcodes auf Methoden und deren Namen
         opcode_map = {
             0x00E0: ("CLS", self.clear_display),  # Clear Display
             0x00EE: ("RET", self.return_subroutine),  # Return from Subroutine
+            0x2000: (f"CALL {hex(self.pc)}", self.call_subroutine),  # Call Subroutine
             0xF007: (f"LD V{x}, DT", self.get_delay_timer),  # LD Vx, DT
             0xF015: (f"LD DT, V{x}", self.set_delay_timer),  # LD DT, Vx
             0xF018: (f"LD ST, V{x}", self.set_sound_timer),  # LD ST, Vx
-            0xF029: (f"LD F, V{x}", self.load_sprite)  # LD F, Vx
+            0xF029: (f"LD F, V{x}", self.load_sprite),  # LD F, Vx
         }
 
 
@@ -168,9 +175,6 @@ class Chip8:
         elif first_nibble == 0xA000:  # LD I, addr
             self.opcode_name = f"LD I, {nnn:03X}"
             self.I = nnn
-        elif first_nibble == 0xD000:  # DRW Vx, Vy, nibble
-            opcode_name = f"DRW V{x}, V{y}, {n:01X}"
-            self.draw_sprite(x, y, n)
         elif first_nibble == 0xE000:
             if nn == 0xA1:  # SKP Vx
                 self.opcode_name = f"SKP V{x}"
@@ -236,18 +240,50 @@ class Chip8:
 
     def load_sprite(self):
         self.I = self.V[0] * 5
+        
+    def call_subroutine(self, opcode):
+        address = opcode & 0x0FFF  # Die untersten 12 Bits als Adresse extrahieren
+        self.stack.append(self.pc)  # Speichere aktuelle Adresse auf dem Stack
+        self.pc = address  # Springe zur neuen Adresse
 
     def draw_sprite(self, x, y, height):
-        self.V[0xF] = 0
+        self.V[0xF] = 0  # Reset carry flag
         for row in range(height):
             pixel = self.memory[self.I + row]
             for col in range(8):
                 if (pixel & (0x80 >> col)) != 0:
-                    index = (self.V[y] + row) * 64 + (self.V[x] + col)
+                    # Berechne die Position, aber stelle sicher, dass sie im Bildschirmbereich bleibt
+                    draw_x = self.V[x] + col
+                    draw_y = self.V[y] + row
+                
+                    # Überprüfen, ob die Position im Bildschirmbereich liegt
+                    if draw_x >= 64 or draw_y >= 32:
+                        continue  # Wenn außerhalb des Bildschirms, überspringen
+                    
+                    index = draw_y * 64 + draw_x
                     if self.display[index] == 1:
-                        self.V[0xF] = 1
-                    self.display[index] ^= 1
-        self.draw_flag = True
+                        self.V[0xF] = 1  # Setze das "collision"-Flag, wenn das Pixel bereits gesetzt ist
+                    self.display[index] ^= 1  # XOR für das Setzen und Löschen des Pixels
+                
+        self.draw_flag = True  # Setze das Flag für die Anzeige
+
+
+    def handle_d_opcode(self, opcode):
+        # Überprüfe, ob der Opcode mit 0xD000 beginnt (also 0xDxxx)
+        if (opcode & 0xF000) != 0xD000:
+            # Falls der Opcode nicht mit 0xD beginnt, tue nichts und verlasse die Methode
+            return
+
+        # Extrahiere die relevanten Werte aus dem Opcode
+        x = (opcode & 0x0F00) >> 8
+        y = (opcode & 0x00F0) >> 4
+        n = opcode & 0x000F
+        self.opcode_name = f"DRW V{x}, V{y}, {n:01X}"
+    
+        # Rufe die `draw_sprite` Methode auf
+        self.draw_sprite(x, y, n)
+
+
 
     def update_timers(self):
         if self.delay_timer > 0:
@@ -266,19 +302,56 @@ def main():
     # Farben definieren
     text_color = (0, 205, 0)
 
+    # Zustand der Pause und der letzten Step-Taste
     is_paused = False
     last_step_time = 0
-    step_delay = 100  # 100 ms Verzögerung
+    step_delay = 100  # 100 ms Verzögerung für Step
     step_requested = False  # Wird gesetzt, wenn die "S"-Taste gedrückt wird
+
+    key_map = {
+        pygame.K_1: 0x1,
+        pygame.K_2: 0x2,
+        pygame.K_3: 0x3,
+        pygame.K_4: 0xC,
+        pygame.K_q: 0x4,
+        pygame.K_w: 0x5,
+        pygame.K_e: 0x6,
+        pygame.K_r: 0xD,
+        pygame.K_a: 0x7,
+        pygame.K_s: 0x8,
+        pygame.K_d: 0x9,
+        pygame.K_f: 0xE,
+        pygame.K_z: 0xA,
+        pygame.K_x: 0x0,
+        pygame.K_c: 0xB,
+        pygame.K_v: 0xF
+    }
+
+
 
     while True:
         for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_e:
+            if event.type == pygame.KEYDOWN:   
+                if event.key == pygame.K_l:
                     pygame.quit()
                     sys.exit()
+                    
+                if event.key in key_map: 
+                    key = key_map[event.key]
+                    chip8.keypad[key] = 1 
 
-            # Tasteneingabe für Play/Pause (Leertaste)
+                if event.key == pygame.K_TAB:
+                    pygame.quit()
+                    if __name__ == "__main__":
+                        main()
+
+
+            if event.type == pygame.KEYUP:
+                if event.key in key_map:  
+                    key = key_map[event.key]
+                    chip8.keypad[key] = 0  
+                    
+           
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:  # Leertaste - Play/Pause
                     is_paused = not is_paused
@@ -302,26 +375,25 @@ def main():
                 console.print(f"[green]PC: {chip8.pc:04X}[/green] | [green]I: {chip8.I:04X}[/green] | [green]OP: {chip8.opcode_name}[/green]")
 
         # Wenn pausiert, führe einen einzelnen Schritt aus, falls Step angefordert
-        if is_paused:
-            if step_requested:
-                opcode = chip8.fetch_opcode()
-                chip8.execute_opcode(opcode)
-                chip8.update_timers()
+        if is_paused and step_requested:
+            opcode = chip8.fetch_opcode()
+            chip8.execute_opcode(opcode)
+            chip8.update_timers()
 
-                # Nur PC und I im Terminal ausgeben, wenn im Step-Modus
-                if chip8.opcode_name == "":
-                    console.print(f"[green]PC: {chip8.pc:04X}[/green] | [green]I: {chip8.I:04X}[/green] | [red]OP: {chip8.opcode_name}[/red]")
-                else:
-                    console.print(f"[green]PC: {chip8.pc:04X}[/green] | [green]I: {chip8.I:04X}[/green] | [green]OP: {chip8.opcode_name}[/green]")
+            # Nur PC und I im Terminal ausgeben, wenn im Step-Modus
+            if chip8.opcode_name == "":
+                console.print(f"[green]PC: {chip8.pc:04X}[/green] | [green]I: {chip8.I:04X}[/green] | [red]OP: {chip8.opcode_name}[/red]")
+            else:
+                console.print(f"[green]PC: {chip8.pc:04X}[/green] | [green]I: {chip8.I:04X}[/green] | [green]OP: {chip8.opcode_name}[/green]")
 
-                step_requested = False  # Reset nach einem Schritt
+            step_requested = False  # Reset nach einem Schritt
 
         if chip8.draw_flag:
-            screen.fill((0, 0, 0))
+            screen.fill((0, 0, 170))
             for y in range(32):
                 for x in range(64):
                     if chip8.display[y * 64 + x]:
-                        pygame.draw.rect(screen, (255, 255, 255), (x * 10, y * 10, 10, 10))
+                        pygame.draw.rect(screen, (170, 170, 255), (x * 10, y * 10, 10, 10))
             pygame.display.flip()
             chip8.draw_flag = False
 
