@@ -112,6 +112,8 @@ class Chip8:
             method()  # Rufe die Methode auf
 
         # Spezifische Behandlung für andere Opcodes
+        elif first_nibble == 0x0000:
+            self.opcode_name = f"NOP"
         elif first_nibble == 0x1000:  # JUMP
             self.opcode_name = f"JP {nnn:03X}"
             self.pc = nnn
