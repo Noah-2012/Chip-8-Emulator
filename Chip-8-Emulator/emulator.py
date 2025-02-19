@@ -13,8 +13,10 @@ parser = argparse.ArgumentParser(description="Ein einfacher Emulator, der eine D
 
 # Argument für den Dateinamen hinzufügen
 parser.add_argument("filename", help="Pfad zur Datei, die geladen werden soll")
-# Optionales Argument für die Tickrate, mit Standardwert 60
-parser.add_argument("-t", "--tickrate", type=int, default=60, help="Setze die Tickrate des Emulators (Standard: 60)")
+# Optionales Argument für die Tickrate, mit Standardwert 500
+parser.add_argument("-t", "--tickrate", type=int, default=500, help="Setze die Tickrate des Emulators (Standard: 500)")
+# Optionales Argument für die Entry-Point-Adresse
+parser.add_argument("-ep", "--entrypoint", type=lambda x: int(x, 0), default=0x200, help="Setze die Entry-Point-Adresse des Emulators (Standard: 0x200)")
 
 # Argumente parsen
 args = parser.parse_args()
@@ -22,13 +24,14 @@ args = parser.parse_args()
 # Die Werte ausgeben
 console.print(f"Die Datei {args.filename} wird geladen...", style="yellow")
 console.print(f"Die Tickrate ist auf {args.tickrate} gesetzt...", style="yellow")
+console.print(f"Der Entrypoint ist auf {hex(args.entrypoint)} gesetzt...", style="yellow")
 
 class Chip8:
     def __init__(self):
         self.memory = [0] * 4096
         self.V = [0] * 16
         self.I = 0
-        self.pc = 0x200
+        self.pc = args.entrypoint
         self.stack = []
         self.display = [0] * (64 * 32)
         self.delay_timer = 0
