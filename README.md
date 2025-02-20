@@ -17,7 +17,7 @@ With `-ep <entrypoint>` you can specify your own entrypoint with e. g. `0x100` a
 - `SPACE` is for pause and play.
 - If it is paused you can do Steps with `s`.
 - With `TAB` you can restart the script.
-- With `e` you can quit.
+- With `l` you can quit.
 
 ## Movement
 
